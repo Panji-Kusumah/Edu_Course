@@ -1,5 +1,3 @@
-
-DROP DATABASE IF EXISTS edu_course;
 CREATE DATABASE edu_course CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE edu_course;
 
