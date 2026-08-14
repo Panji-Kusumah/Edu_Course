@@ -206,6 +206,7 @@ INSERT INTO categories (category_id, category_name, slug) VALUES
 (3, 'Desain', 'desain'), (4, 'Pemasaran', 'pemasaran'),
 (5, 'Bisnis', 'bisnis'), (6, 'Pengembangan Diri', 'pengembangan-diri');
 
+-- data dummy --
 INSERT INTO tutors (tutor_id, name, title, bio, expertise) VALUES
 (1, 'Rina Wijaya', 'Backend Engineer di GoTo', 'Praktisi industri 5+ tahun.', 'Node.js'),
 (2, 'Bima Arya', 'Backend Engineer di Traveloka', 'Praktisi industri 5+ tahun.', 'REST API'),

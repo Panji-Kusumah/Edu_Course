@@ -47,13 +47,10 @@ async function startServer() {
             console.warn(' Database connection pool not found. Proceeding without active DB connection.');
         }
         server = app.listen(PORT, () => {
-            //biar kren aja 
-            console.log('\x1b[32m%s\x1b[0m','---------------------------------------------------');
             console.log('\x1b[32m%s\x1b[0m',' Edu Course API Service is running');
             console.log(` Local URL:   http://localhost:${PORT}`);
             console.log(` Health Check: http://localhost:${PORT}/api/v1/health`);
             console.log(` Courses API: http://localhost:${PORT}/api/v1/course`);
-            console.log('\x1b[32m%s\x1b[0m','----------------------------------------------------');
         });
         process.on('SIGINT', () => shutdown('SIGINT'));
         process.on('SIGTERM', () => shutdown('SIGTERM'));

@@ -5,7 +5,7 @@ const router = Router();
 router.get('/', (req, res) => {
     return sendSuccess(res, {
         statusCode: 200,
-        message: 'Edu Course API aktif',
+        message: 'Edu Course API is active',
         data: {
             name: 'Edu Course API',
             version: 'v1',
