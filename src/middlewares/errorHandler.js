@@ -17,7 +17,7 @@ function extractDuplicateEntryDetails(error) {
     if (!match) {
         return [
             {
-                message: 'Data duplikat terdeteksi',
+                message: 'Duplicate data detected',
             },
         ];
     }
@@ -27,7 +27,7 @@ function extractDuplicateEntryDetails(error) {
         {
             field,
             value,
-            message: `Nilai '${value}' sudah digunakan pada field '${field}'`,
+            message: `The value '${value}' is already in use for field '${field}'`,
         },
     ];
 }
@@ -47,7 +47,7 @@ function buildMySQLDetails(error) {
 }
 export function notFoundHandler(req, res, next) {
     const error = new Error(
-        `Route ${req.method} ${req.originalUrl} tidak ditemukan`
+        `Route ${req.method} ${req.originalUrl} not found`
     );
     error.statusCode = 404;
     error.status = 404;
@@ -59,25 +59,25 @@ export function errorHandler(err, req, res, next) {
         return next(err);
     }
     let statusCode = normalizeStatusCode(err.statusCode || err.status);
-    let message = err.message || 'Terjadi kesalahan pada server';
+    let message = err.message || 'An unexpected error occurred while processing your request';
     let details = err.details;
     if (
         err.type === 'entity.parse.failed' ||
         (err instanceof SyntaxError && 'body' in err)
     ) {
         statusCode = 400;
-        message = 'Format JSON tidak valid';
+        message = 'Failed to parse request body: Invalid JSON format';
         details = [
             {
                 field: 'body',
-                message: 'Body request harus berupa JSON yang valid',
+                message: 'Request body must be a valid JSON',
             },
         ];
     }
     if (err.code) {
         if (err.code === 'ER_DUP_ENTRY') {
             statusCode = 409;
-            message = 'Data sudah ada atau melanggar unique constraint';
+            message = 'Data already exists or violates a unique constraint';
             details = extractDuplicateEntryDetails(err);
         }
         if (
@@ -85,7 +85,7 @@ export function errorHandler(err, req, res, next) {
             err.code === 'ER_NO_REFERENCED_ROW_2'
         ) {
             statusCode = 400;
-            message = 'Data terkait tidak ditemukan atau tidak valid';
+            message = 'Related data not found or invalid';
             details = buildMySQLDetails(err);
         }
         if (
@@ -94,7 +94,7 @@ export function errorHandler(err, req, res, next) {
         ) {
             statusCode = 409;
             message =
-                'Data tidak dapat dihapus atau diperbarui karena masih digunakan oleh data lain';
+                'Data cannot be deleted or updated because it is referenced by other records';
             details = buildMySQLDetails(err);
         }
         if (
@@ -102,7 +102,7 @@ export function errorHandler(err, req, res, next) {
             err.errno === 3819
         ) {
             statusCode = 422;
-            message = 'Data tidak memenuhi aturan validasi database';
+            message = 'Data does not satisfy database validation rules';
             details = buildMySQLDetails(err);
         }
         if (
@@ -111,12 +111,12 @@ export function errorHandler(err, req, res, next) {
             err.code === 'ER_DATA_TOO_LONG'
         ) {
             statusCode = 400;
-            message = 'Format atau panjang data tidak valid';
+            message = 'Invalid data format or length';
             details = buildMySQLDetails(err);
         }
     }
     if (statusCode >= 500 && isProduction) {
-        message = 'Terjadi kesalahan pada server';
+        message = 'An internal server error occurred';
         details = undefined;
     }
     console.error('[ErrorHandler]', {

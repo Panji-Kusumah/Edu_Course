@@ -197,7 +197,7 @@ CREATE TABLE reviews (
   CONSTRAINT fk_review_class FOREIGN KEY (class_id) REFERENCES classes(class_id)
 ) ENGINE=InnoDB;
 
--- ===================== SEED =====================
+
 INSERT INTO users (user_id, name, email, phone, password, role, auth_provider, google_id, batch) VALUES
 (1, 'Budi Santoso', 'budi@student.com', '081200000001', '$2b$10$dummyhash', 'student', 'local', NULL, 'Batch 2');
 

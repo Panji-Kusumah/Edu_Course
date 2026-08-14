@@ -11,7 +11,7 @@ function formatZodError(zodError) {
 }
 
 function createValidationError(details) {
-    const error = new Error('Validasi request gagal');
+    const error = new Error('Request validation failed');
     error.statusCode = 400;
     error.status = 400;
     error.code = 'ERR_VALIDATION';
@@ -19,22 +19,25 @@ function createValidationError(details) {
     error.details = details;
     return error;
 }
-
 export function validate(schemas = {}) {
-    return async (req, res, next) => {
+    return (req, res, next) => {
         try {
             if (schemas.params) {
-                req.params = await schemas.params.parseAsync(req.params || {});
+                req.validParams = schemas.params.parse(req.params || {});
+            } else {
+                req.validParams = req.params || {};
             }
             if (schemas.query) {
-                req.query = await schemas.query.parseAsync(req.query || {});
+                req.validQuery = schemas.query.parse(req.query || {});
+            } else {
+                req.validQuery = req.query || {};
             }
             if (schemas.body) {
-                req.body = await schemas.body.parseAsync(req.body ?? {});
+                req.body = schemas.body.parse(req.body ?? {});
             }
             req.valid = {
-                params: req.params,
-                query: req.query,
+                params: req.validParams,
+                query: req.validQuery,
                 body: req.body,
             };
             return next();

@@ -1,48 +1,63 @@
 import * as databaseModule from '../config/database.js';
+
 const pool =
     databaseModule.default ||
     databaseModule.pool ||
     databaseModule.db ||
     databaseModule.connection;
-if (!pool || typeof pool.execute !== 'function') {
+
+if (!pool || typeof pool.query !== 'function') {
     throw new Error(
-        'Database pool tidak ditemukan. Pastikan src/config/database.js mengekspor pool mysql2/promise.'
+        'Failed to initialize database connection. Invalid pool configuration'
     );
 }
 
 const COURSE_TABLE = 'classes';
 const COURSE_VIEW = 'v_course_cards';
-const IMMUTABLE_COLUMNS = new Set([
-    'id',
-    'created_at',
-    'updated_at',
-    'deleted_at',
-]);
-
 const DEFAULT_COURSE_COLUMNS = new Set([
+    'class_id',
     'category_id',
     'tutor_id',
     'name',
+    'title',
     'slug',
     'description',
     'level',
     'status',
     'price',
+    'discount_percent',
     'rating',
+    'thumbnail',
     'thumbnail_url',
 ]);
 
 let courseColumnsPromise = null;
+let coursePrimaryKeyPromise = null;
+
+async function runQuery(sql, params = {}) {
+    const hasParams = Object.keys(params).length > 0;
+    if (!hasParams) {
+        return pool.query(sql);
+    }
+    return pool.query(
+        {
+            sql,
+            namedPlaceholders: true,
+        },
+        params
+    );
+}
+
 async function getCourseColumns() {
     if (!courseColumnsPromise) {
         courseColumnsPromise = (async () => {
             try {
-                const [rows] = await pool.execute(
+                const [rows] = await runQuery(
                     `
-            SELECT COLUMN_NAME
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE()
-            AND TABLE_NAME = :tableName
+                        SELECT COLUMN_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                        AND TABLE_NAME = :tableName
                     `,
                     {
                         tableName: COURSE_TABLE,
@@ -59,30 +74,75 @@ async function getCourseColumns() {
     }
     return courseColumnsPromise;
 }
-function sanitizePayload(payload, columns) {
+
+async function getCoursePrimaryKey() {
+    if (!coursePrimaryKeyPromise) {
+        coursePrimaryKeyPromise = (async () => {
+            try {
+                const [rows] = await runQuery(
+                    `
+                        SELECT COLUMN_NAME
+                        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                        WHERE TABLE_SCHEMA = DATABASE()
+                        AND TABLE_NAME = :tableName
+                        AND CONSTRAINT_NAME = 'PRIMARY'
+                        LIMIT 1
+                    `,
+                    {
+                        tableName: COURSE_TABLE,
+                    }
+                );
+                if (rows?.[0]?.COLUMN_NAME) {
+                    return rows[0].COLUMN_NAME;
+                }
+            } catch {
+            }
+            const columns = await getCourseColumns();
+            if (columns.has('id')) {
+                return 'id';
+            }
+            if (columns.has('class_id')) {
+                return 'class_id';
+            }
+            return 'id';
+        })();
+    }
+    return coursePrimaryKeyPromise;
+}
+
+function sanitizePayload(payload, columns, primaryKey) {
+    const immutableColumns = new Set([
+        'id',
+        'class_id',
+        'created_at',
+        'updated_at',
+        'deleted_at',
+        primaryKey,
+    ]);
     const entries = Object.entries(payload ?? {}).filter(
         ([key, value]) => columns.has(key) && value !== undefined
     );
     const safeEntries = entries.filter(
-        ([key]) => !IMMUTABLE_COLUMNS.has(key)
+        ([key]) => !immutableColumns.has(key)
     );
     return Object.fromEntries(safeEntries);
 }
-function buildCourseFilters(filters = {}) {
+
+function buildCourseFilters(filters = {}, columns = new Set()) {
     const where = [];
     const params = {};
     const status = filters.status;
     const level = filters.level;
     const categoryId = filters.categoryId ?? filters.category_id;
-    if (status) {
+    if (status && columns.has('status')) {
         where.push('status = :status');
         params.status = status;
     }
-    if (level) {
+    if (level && columns.has('level')) {
         where.push('level = :level');
         params.level = level;
     }
-    if (categoryId) {
+    if (categoryId && columns.has('category_id')) {
         where.push('category_id = :categoryId');
         params.categoryId = categoryId;
     }
@@ -91,6 +151,7 @@ function buildCourseFilters(filters = {}) {
         params,
     };
 }
+
 export async function findAllCourses({
     page = 1,
     limit = 10,
@@ -100,51 +161,75 @@ export async function findAllCourses({
     categoryId,
     category_id,
 } = {}) {
-    const { where, params } = buildCourseFilters({
-        status,
-        level,
-        categoryId,
-        category_id,
-    });
+    const [columns, primaryKey] = await Promise.all([
+        getCourseColumns(),
+        getCoursePrimaryKey(),
+    ]);
+    const { where, params } = buildCourseFilters(
+        {
+            status,
+            level,
+            categoryId,
+            category_id,
+        },
+        columns
+    );
     const whereSql = where.length > 0
-        ? `WHERE ${where.join(' AND ')}`
+        ? `WHERE ${where.map((w) => `c.${w}`).join(' AND ')}`
         : '';
+    const safeLimit = Math.max(1, Math.floor(Number(limit) || 10));
+    const safeOffset = Math.max(0, Math.floor(Number(offset) || 0));
     const sql = `
-    SELECT *
-    FROM ${COURSE_VIEW}
-    ${whereSql}
-    ORDER BY id DESC
-    LIMIT :limit OFFSET :offset
+        SELECT v.*
+        FROM ${COURSE_TABLE} c
+        JOIN ${COURSE_VIEW} v
+        ON c.${primaryKey} = v.class_id
+        ${whereSql}
+        ORDER BY c.${primaryKey} ASC
+        LIMIT ${safeLimit} OFFSET ${safeOffset}
     `;
-    const [rows] = await pool.execute(sql, {
-        ...params,
-        limit,
-        offset,
-    });
+    const [rows] = await runQuery(sql, params);
     return rows;
 }
+
 export async function countCourses(filters = {}) {
-    const { where, params } = buildCourseFilters(filters);
+    const columns = await getCourseColumns();
+    const { where, params } = buildCourseFilters(filters, columns);
     const whereSql = where.length > 0
-        ? `WHERE ${where.join(' AND ')}`
+        ? `WHERE ${where.map((w) => `c.${w}`).join(' AND ')}`
         : '';
     const sql = `
-    SELECT COUNT(*) AS total
-    FROM ${COURSE_VIEW}
-    ${whereSql}
+        SELECT COUNT(*) AS total
+        FROM ${COURSE_TABLE} c
+        ${whereSql}
     `;
-    const [rows] = await pool.execute(sql, params);
+
+    const [rows] = await runQuery(sql, params);
+
     return Number(rows[0]?.total ?? 0);
 }
+
 export async function findCourseById(id) {
+    const [columns, primaryKey] = await Promise.all([
+        getCourseColumns(),
+        getCoursePrimaryKey(),
+    ]);
+
+    const softDeleteCondition = columns.has('deleted_at')
+        ? 'AND c.deleted_at IS NULL'
+        : '';
+
     try {
-        const [viewRows] = await pool.execute(
+        const [viewRows] = await runQuery(
             `
-        SELECT *
-        FROM ${COURSE_VIEW}
-        WHERE id = :id
-        LIMIT 1
-        `,
+                SELECT v.*
+                FROM ${COURSE_TABLE} c
+                JOIN ${COURSE_VIEW} v
+                ON c.${primaryKey} = v.class_id
+                WHERE c.${primaryKey} = :id
+                ${softDeleteCondition}
+                LIMIT 1
+            `,
             {
                 id,
             }
@@ -154,49 +239,61 @@ export async function findCourseById(id) {
         }
     } catch {
     }
-    const [rows] = await pool.execute(
-        `
-        SELECT
-        c.*,
-        cat.name AS category_name,
-        t.name AS tutor_name
+
+    const selectColumns = ['c.*'];
+    const joins = [];
+    if (columns.has('category_id')) {
+        selectColumns.push('cat.name AS category_name');
+        joins.push('LEFT JOIN categories cat ON cat.id = c.category_id');
+    }
+    if (columns.has('tutor_id')) {
+        selectColumns.push('t.name AS tutor_name');
+        joins.push('LEFT JOIN tutors t ON t.id = c.tutor_id');
+    }
+    const sql = `
+        SELECT ${selectColumns.join(', ')}
         FROM ${COURSE_TABLE} c
-        LEFT JOIN categories cat
-        ON cat.id = c.category_id
-        LEFT JOIN tutors t
-        ON t.id = c.tutor_id
-        WHERE c.id = :id
-        AND c.deleted_at IS NULL
+        ${joins.join(' ')}
+        WHERE c.${primaryKey} = :id
+        ${softDeleteCondition}
         LIMIT 1
-    `,
-        {
-            id,
-        }
-    );
+    `;
+    const [rows] = await runQuery(sql, {
+        id,
+    });
     return rows[0] ?? null;
 }
+
 export async function findActiveCourseRowById(id) {
-    const [rows] = await pool.execute(
-        `
-        SELECT id
+    const [columns, primaryKey] = await Promise.all([
+        getCourseColumns(),
+        getCoursePrimaryKey(),
+    ]);
+    const softDeleteCondition = columns.has('deleted_at')
+        ? 'AND deleted_at IS NULL'
+        : '';
+    const sql = `
+        SELECT ${primaryKey} AS id
         FROM ${COURSE_TABLE}
-        WHERE id = :id
-        AND deleted_at IS NULL
+        WHERE ${primaryKey} = :id
+        ${softDeleteCondition}
         LIMIT 1
-    `,
-        {
-            id,
-        }
-    );
+    `;
+    const [rows] = await runQuery(sql, {
+        id,
+    });
     return rows[0] ?? null;
 }
 
 export async function createCourse(payload) {
-    const columns = await getCourseColumns();
-    const data = sanitizePayload(payload, columns);
+    const [columns, primaryKey] = await Promise.all([
+        getCourseColumns(),
+        getCoursePrimaryKey(),
+    ]);
+    const data = sanitizePayload(payload, columns, primaryKey);
     const fields = Object.keys(data);
     if (fields.length === 0) {
-        const error = new Error('Tidak ada field valid untuk membuat course');
+        const error = new Error('No valid fields provided to create course');
         error.statusCode = 400;
         error.status = 400;
         error.isOperational = true;
@@ -205,15 +302,19 @@ export async function createCourse(payload) {
     const columnSql = fields.map((field) => `\`${field}\``).join(', ');
     const valueSql = fields.map((field) => `:${field}`).join(', ');
     const sql = `
-    INSERT INTO ${COURSE_TABLE} (${columnSql})
-    VALUES (${valueSql})
+        INSERT INTO ${COURSE_TABLE} (${columnSql})
+        VALUES (${valueSql})
     `;
-    const [result] = await pool.execute(sql, data);
+    const [result] = await runQuery(sql, data);
     return result.insertId;
 }
+
 export async function updateCourse(id, payload) {
-    const columns = await getCourseColumns();
-    const data = sanitizePayload(payload, columns);
+    const [columns, primaryKey] = await Promise.all([
+        getCourseColumns(),
+        getCoursePrimaryKey(),
+    ]);
+    const data = sanitizePayload(payload, columns, primaryKey);
     const fields = Object.keys(data);
     if (fields.length === 0) {
         return false;
@@ -221,13 +322,16 @@ export async function updateCourse(id, payload) {
     const setSql = fields
         .map((field) => `\`${field}\` = :${field}`)
         .join(', ');
+    const softDeleteCondition = columns.has('deleted_at')
+        ? 'AND deleted_at IS NULL'
+        : '';
     const sql = `
-    UPDATE ${COURSE_TABLE}
-    SET ${setSql}
-    WHERE id = :id
-        AND deleted_at IS NULL
+        UPDATE ${COURSE_TABLE}
+        SET ${setSql}
+        WHERE ${primaryKey} = :id
+        ${softDeleteCondition}
     `;
-    const [result] = await pool.execute(sql, {
+    const [result] = await runQuery(sql, {
         ...data,
         id,
     });
@@ -235,29 +339,39 @@ export async function updateCourse(id, payload) {
 }
 
 export async function softDeleteCourse(id) {
-    const [result] = await pool.execute(
-        `
+    const [columns, primaryKey] = await Promise.all([
+        getCourseColumns(),
+        getCoursePrimaryKey(),
+    ]);
+    if (!columns.has('deleted_at')) {
+        const error = new Error(
+            'The course table does not support soft delete operation due to missing deleted_at column'
+        );
+        error.statusCode = 422;
+        error.status = 422;
+        error.isOperational = true;
+        throw error;
+    }
+    const sql = `
         UPDATE ${COURSE_TABLE}
         SET deleted_at = NOW()
-        WHERE id = :id
+        WHERE ${primaryKey} = :id
         AND deleted_at IS NULL
-    `,
-        {
-            id,
-        }
-    );
+    `;
+    const [result] = await runQuery(sql, {
+        id,
+    });
     return result.affectedRows > 0;
 }
 
 export async function hardDeleteCourse(id) {
-    const [result] = await pool.execute(
-        `
+    const primaryKey = await getCoursePrimaryKey();
+    const sql = `
         DELETE FROM ${COURSE_TABLE}
-        WHERE id = :id
-    `,
-        {
-            id,
-        }
-    );
+        WHERE ${primaryKey} = :id
+    `;
+    const [result] = await runQuery(sql, {
+        id,
+    });
     return result.affectedRows > 0;
 }
