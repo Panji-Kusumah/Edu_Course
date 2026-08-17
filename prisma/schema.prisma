@@ -1,0 +1,270 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextIndex"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model categories {
+  category_id   Int       @id @default(autoincrement()) @db.UnsignedInt
+  category_name String    @db.VarChar(100)
+  slug          String    @unique(map: "uq_categories_slug") @db.VarChar(120)
+  created_at    DateTime? @default(now()) @db.Timestamp(0)
+  updated_at    DateTime? @default(now()) @db.Timestamp(0)
+  classes       classes[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model classes {
+  class_id             Int             @id @default(autoincrement()) @db.UnsignedInt
+  tutor_id             Int             @db.UnsignedInt
+  category_id          Int             @db.UnsignedInt
+  title                String          @db.VarChar(150)
+  description          String?         @db.Text
+  price                Decimal         @default(0.00) @db.Decimal(12, 2)
+  discount_percent     Int             @default(0) @db.UnsignedTinyInt
+  level                classes_level?  @default(beginner)
+  thumbnail            String?         @db.VarChar(255)
+  language             String          @default("Indonesia") @db.VarChar(50)
+  includes_certificate Boolean         @default(true)
+  status               classes_status? @default(draft)
+  created_at           DateTime?       @default(now()) @db.Timestamp(0)
+  updated_at           DateTime?       @default(now()) @db.Timestamp(0)
+  deleted_at           DateTime?       @db.DateTime(0)
+  categories           categories      @relation(fields: [category_id], references: [category_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_classes_category")
+  tutors               tutors          @relation(fields: [tutor_id], references: [tutor_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_classes_tutor")
+  enrollments          enrollments[]
+  modules              modules[]
+  order_details        order_details[]
+  pretests             pretests[]
+  reviews              reviews[]
+
+  @@index([category_id], map: "idx_classes_category")
+  @@index([status, created_at], map: "idx_classes_status_created")
+  @@index([status, level], map: "idx_classes_status_level")
+  @@index([tutor_id], map: "idx_classes_tutor")
+  @@fulltext([title, description], map: "ft_classes_search")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model enrollments {
+  enrollment_id Int                 @id @default(autoincrement()) @db.UnsignedInt
+  user_id       Int                 @db.UnsignedInt
+  class_id      Int                 @db.UnsignedInt
+  order_id      Int                 @db.UnsignedInt
+  progress      Int?                @default(0) @db.UnsignedTinyInt
+  status        enrollments_status? @default(active)
+  created_at    DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at    DateTime?           @default(now()) @db.Timestamp(0)
+  classes       classes             @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_enroll_class")
+  orders        orders              @relation(fields: [order_id], references: [order_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_enroll_order")
+  users         users               @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_enroll_user")
+
+  @@unique([user_id, class_id], map: "uq_enrollments_user_class")
+  @@index([class_id], map: "idx_enrollments_class")
+  @@index([order_id], map: "idx_enrollments_order")
+}
+
+model materials {
+  material_id   Int                     @id @default(autoincrement()) @db.UnsignedInt
+  module_id     Int                     @db.UnsignedInt
+  material_type materials_material_type
+  title         String                  @db.VarChar(150)
+  content       String?                 @db.Text
+  video_url     String?                 @db.VarChar(255)
+  duration      Int?
+  sequence      Int                     @default(1)
+  created_at    DateTime?               @default(now()) @db.Timestamp(0)
+  updated_at    DateTime?               @default(now()) @db.Timestamp(0)
+  modules       modules                 @relation(fields: [module_id], references: [module_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_materials_module")
+
+  @@index([module_id, material_type], map: "idx_materials_module_type")
+}
+
+model modules {
+  module_id    Int         @id @default(autoincrement()) @db.UnsignedInt
+  class_id     Int         @db.UnsignedInt
+  module_title String      @db.VarChar(150)
+  sequence     Int         @default(1)
+  created_at   DateTime?   @default(now()) @db.Timestamp(0)
+  updated_at   DateTime?   @default(now()) @db.Timestamp(0)
+  materials    materials[]
+  classes      classes     @relation(fields: [class_id], references: [class_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_modules_class")
+
+  @@index([class_id, sequence], map: "idx_modules_class_seq")
+}
+
+model order_details {
+  order_detail_id Int       @id @default(autoincrement()) @db.UnsignedInt
+  order_id        Int       @db.UnsignedInt
+  class_id        Int       @db.UnsignedInt
+  price           Decimal   @db.Decimal(12, 2)
+  created_at      DateTime? @default(now()) @db.Timestamp(0)
+  updated_at      DateTime? @default(now()) @db.Timestamp(0)
+  classes         classes   @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_od_class")
+  orders          orders    @relation(fields: [order_id], references: [order_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_od_order")
+
+  @@unique([order_id, class_id], map: "uq_order_details_order_class")
+  @@index([class_id], map: "idx_order_details_class")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model orders {
+  order_id      Int             @id @default(autoincrement()) @db.UnsignedInt
+  user_id       Int             @db.UnsignedInt
+  total_price   Decimal         @default(0.00) @db.Decimal(12, 2)
+  admin_fee     Decimal         @default(0.00) @db.Decimal(12, 2)
+  status        orders_status?  @default(pending)
+  created_at    DateTime?       @default(now()) @db.Timestamp(0)
+  updated_at    DateTime?       @default(now()) @db.Timestamp(0)
+  enrollments   enrollments[]
+  order_details order_details[]
+  users         users           @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_orders_user")
+  payments      payments?
+
+  @@index([user_id, status], map: "idx_orders_user_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model payments {
+  payment_id       Int                     @id @default(autoincrement()) @db.UnsignedInt
+  order_id         Int                     @unique(map: "uq_payments_order") @db.UnsignedInt
+  payment_method   payments_payment_method
+  payment_provider String?                 @db.VarChar(50)
+  status           payments_status?        @default(pending)
+  amount           Decimal                 @db.Decimal(12, 2)
+  proof_url        String?                 @db.VarChar(255)
+  paid_at          DateTime?               @db.Timestamp(0)
+  created_at       DateTime?               @default(now()) @db.Timestamp(0)
+  updated_at       DateTime?               @default(now()) @db.Timestamp(0)
+  orders           orders                  @relation(fields: [order_id], references: [order_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_payments_order")
+
+  @@index([status], map: "idx_payments_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model pretests {
+  pretest_id      Int       @id @default(autoincrement()) @db.UnsignedInt
+  user_id         Int       @db.UnsignedInt
+  class_id        Int       @db.UnsignedInt
+  score           Int       @default(0)
+  total_questions Int
+  correct_answers Int
+  taken_at        DateTime? @db.Timestamp(0)
+  created_at      DateTime? @default(now()) @db.Timestamp(0)
+  updated_at      DateTime? @default(now()) @db.Timestamp(0)
+  classes         classes   @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_pretest_class")
+  users           users     @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_pretest_user")
+
+  @@index([class_id], map: "idx_pretests_class")
+  @@index([user_id, class_id], map: "idx_pretests_user_class")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model reviews {
+  review_id  Int       @id @default(autoincrement()) @db.UnsignedInt
+  user_id    Int       @db.UnsignedInt
+  class_id   Int       @db.UnsignedInt
+  rating     Decimal   @db.Decimal(2, 1)
+  comment    String?   @db.Text
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+  updated_at DateTime? @default(now()) @db.Timestamp(0)
+  classes    classes   @relation(fields: [class_id], references: [class_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_review_class")
+  users      users     @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_review_user")
+
+  @@unique([user_id, class_id], map: "uq_reviews_user_class")
+  @@index([class_id, rating], map: "idx_reviews_class_rating")
+}
+
+model tutors {
+  tutor_id   Int       @id @default(autoincrement()) @db.UnsignedInt
+  name       String    @db.VarChar(100)
+  title      String?   @db.VarChar(150)
+  bio        String?   @db.Text
+  expertise  String?   @db.VarChar(150)
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+  updated_at DateTime? @default(now()) @db.Timestamp(0)
+  classes    classes[]
+}
+
+model users {
+  user_id            Int                 @id @default(autoincrement()) @db.UnsignedInt
+  name               String              @db.VarChar(100)
+  username           String?             @unique(map: "uq_users_username") @db.VarChar(50)
+  email              String              @unique(map: "uq_users_email") @db.VarChar(100)
+  verification_token String?             @db.VarChar(64)
+  is_verified        Boolean             @default(false)
+  verified_at        DateTime?           @db.Timestamp(0)
+  phone              String?             @unique(map: "uq_users_phone") @db.VarChar(20)
+  password           String?             @db.VarChar(255)
+  role               users_role          @default(student)
+  auth_provider      users_auth_provider @default(local)
+  google_id          String?             @unique(map: "uq_users_google_id") @db.VarChar(255)
+  batch              String?             @db.VarChar(50)
+  photo              String?             @db.VarChar(255)
+  created_at         DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at         DateTime?           @default(now()) @db.Timestamp(0)
+  deleted_at         DateTime?           @db.DateTime(0)
+  enrollments        enrollments[]
+  orders             orders[]
+  pretests           pretests[]
+  reviews            reviews[]
+}
+
+enum materials_material_type {
+  rangkuman
+  video
+  quiz
+}
+
+enum payments_payment_method {
+  bank_transfer
+  ewallet
+  credit_card
+}
+
+enum orders_status {
+  pending
+  paid
+  cancelled
+  refunded
+}
+
+enum payments_status {
+  pending
+  success
+  failed
+  expired
+}
+
+enum enrollments_status {
+  active
+  completed
+  dropped
+}
+
+enum classes_level {
+  beginner
+  intermediate
+  advanced
+}
+
+enum users_role {
+  student
+  tutor
+  admin
+}
+
+enum users_auth_provider {
+  local
+  google
+}
+
+enum classes_status {
+  draft
+  published
+  archived
+}
