@@ -1,9 +1,9 @@
-
 function cleanPayload(payload) {
     return Object.fromEntries(
         Object.entries(payload).filter(([, value]) => value !== undefined)
     );
 }
+
 export function sendSuccess(
     res,
     {
@@ -28,7 +28,7 @@ export function sendSuccess(
 export function sendCreated(
     res,
     {
-        message = 'Data berhasil dibuat',
+        message = 'Data created successfully',
         data,
         meta,
     } = {}
@@ -44,7 +44,7 @@ export function sendCreated(
 export function sendUpdated(
     res,
     {
-        message = 'Data berhasil diperbarui',
+        message = 'Data updated successfully',
         data,
         meta,
     } = {}
@@ -56,10 +56,11 @@ export function sendUpdated(
         meta,
     });
 }
+
 export function sendDeleted(
     res,
     {
-        message = 'Data berhasil dihapus',
+        message = 'Data deleted successfully',
         data,
         meta,
     } = {}
@@ -76,7 +77,7 @@ export function sendError(
     res,
     {
         statusCode = 500,
-        message = 'Terjadi kesalahan pada server',
+        message = 'An internal server error occurred',
         details,
     } = {}
 ) {
