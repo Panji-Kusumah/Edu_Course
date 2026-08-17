@@ -633,36 +633,6 @@ DESCRIBE classes;
 ```
 
 ---
-
-# 📸 Bukti Testing untuk Portofolio
-
-Disarankan menyimpan bukti berikut:
-
-- Screenshot request Postman.
-- Screenshot response JSON.
-- Screenshot status code.
-- Screenshot hasil query MySQL untuk soft delete dan hard delete.
-- Export Postman collection jika diperlukan.
-
-Struktur folder bukti:
-
-```txt
-docs/
-├── postman/
-│   ├── 01-get-all-courses.png
-│   ├── 02-get-pagination.png
-│   ├── 03-get-filter.png
-│   ├── 04-get-detail.png
-│   ├── 05-get-not-found.png
-│   ├── 06-create-valid.png
-│   ├── 07-create-invalid.png
-│   ├── 08-patch.png
-│   ├── 09-put.png
-│   ├── 10-soft-delete.png
-│   ├── 11-get-deleted.png
-│   └── 12-hard-delete.png
-```
-
 ---
 
 # ✅ Hasil Akhir Testing
